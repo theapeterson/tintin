@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Parameters.h"
+#include <ea_midi_mapper/ea_midi_mapper.h>
 
 class NewPluginTemplateAudioProcessor : public PluginHelpers::ProcessorBase
 {
@@ -17,4 +18,6 @@ public:
 private:
 
     Parameters parameters;
+    EA::MIDI::RandomTransposer randomTransposer;
+    EA::MIDI::Mapper mapper;
 };

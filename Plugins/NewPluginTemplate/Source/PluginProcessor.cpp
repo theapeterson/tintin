@@ -10,12 +10,9 @@ void NewPluginTemplateAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
                                                    juce::MidiBuffer& midiMessages)
 
 {
-    juce::ignoreUnused(midiMessages);
+    buffer.clear();
 
-    if (parameters.enable->get())
-        buffer.applyGain(parameters.gain->get());
-    else
-        buffer.clear();
+    mapper.process(midiMessages, randomTransposer);
 }
 
 juce::AudioProcessorEditor* NewPluginTemplateAudioProcessor::createEditor()
