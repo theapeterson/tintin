@@ -1,20 +1,21 @@
-#include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "PluginProcessor.h"
 
-NewPluginTemplateAudioProcessorEditor::NewPluginTemplateAudioProcessorEditor(
-    NewPluginTemplateAudioProcessor& p)
-    : AudioProcessorEditor(&p)
+TinTinProcessorEditor::TinTinProcessorEditor(TinTinProcessor& p)
+    : AudioProcessorEditor(&p),
+      genericEditor(p)
 {
-    addAndMakeVisible(editor);
+    addAndMakeVisible(genericEditor);
     setSize(400, 300);
 }
 
-void NewPluginTemplateAudioProcessorEditor::paint(juce::Graphics& g)
+void TinTinProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
+    g.fillAll(getLookAndFeel()
+        .findColour(juce::ResizableWindow::backgroundColourId));
 }
 
-void NewPluginTemplateAudioProcessorEditor::resized()
+void TinTinProcessorEditor::resized()
 {
-    editor.setBounds(getLocalBounds());
+    genericEditor.setBounds(getLocalBounds());
 }

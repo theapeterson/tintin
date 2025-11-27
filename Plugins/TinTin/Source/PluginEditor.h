@@ -2,14 +2,14 @@
 
 #include "PluginProcessor.h"
 
-class NewPluginTemplateAudioProcessorEditor : public juce::AudioProcessorEditor
+class TinTinProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    explicit NewPluginTemplateAudioProcessorEditor(NewPluginTemplateAudioProcessor&);
-
+    explicit TinTinProcessorEditor(TinTinProcessor&);
 private:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    juce::GenericAudioProcessorEditor editor {processor};
+    // juce::GenericAudioProcessorEditor genericEditor {processor};
+    juce::GenericAudioProcessorEditor genericEditor;
 };
