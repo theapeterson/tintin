@@ -2,6 +2,11 @@ project(TinTin VERSION 0.0.1)
 
 set (BaseTargetName TinTin)
 
+juce_add_binary_data(TintinPianoSamples
+        SOURCES
+        Source/Assets/C4.wav
+)
+
 juce_add_plugin("${BaseTargetName}"
         # VERSION ...                               # Set this if the plugin version is different to the project version
         # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
@@ -18,9 +23,7 @@ juce_add_plugin("${BaseTargetName}"
         FORMATS AU VST3 Standalone
         PRODUCT_NAME "Tintinabulator")
 
-target_sources(${BaseTargetName} PRIVATE
-        Source/PluginProcessor.cpp
-        Source/PluginEditor.cpp)
+
 
 target_compile_definitions(${BaseTargetName}
         PUBLIC
@@ -28,10 +31,23 @@ target_compile_definitions(${BaseTargetName}
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
+target_include_directories(${BaseTargetName} PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/Plugins/TinTin/juce_binarydata_TintinPianoSamples/JuceLibraryCode
+)
+
 target_link_libraries(${BaseTargetName} PRIVATE
+        TintinPianoSamples
+        juce_audio_utils
         shared_plugin_helpers
         juce_recommended_config_flags
         juce_recommended_lto_flags
         juce_recommended_warning_flags
         ea_midi_mapper)
 
+target_sources(${BaseTargetName} PRIVATE
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp
+        Source/Tintinnabuli/TintinnabuliTypes.h
+        Source/Tintinnabuli/TintinnabuliMapper.h
+        Source/Tintinnabuli/TintinnabuliMapper.cpp
+)
