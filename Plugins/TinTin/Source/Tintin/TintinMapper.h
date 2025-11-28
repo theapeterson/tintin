@@ -1,7 +1,7 @@
 // Plugins/TinTin/Source/Tintinnabuli/TintinnabuliMapper.h
 #pragma once
 
-#include "TintinnabuliTypes.h"
+#include "TintinTypes.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 
 namespace Tintinnabuli

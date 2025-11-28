@@ -4,7 +4,7 @@
 #include "Parameters.h"
 #include <shared_plugin_helpers/shared_plugin_helpers.h>
 
-#include "Tintinnabuli/TintinnabuliMapper.h"
+#include "Tintin/TintinMapper.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "BinaryData.h"

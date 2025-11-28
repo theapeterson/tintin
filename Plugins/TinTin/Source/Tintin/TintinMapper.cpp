@@ -1,5 +1,5 @@
 // Plugins/TinTin/Source/Tintinnabuli/TintinnabuliMapper.cpp
-#include "TintinnabuliMapper.h"
+#include "TintinMapper.h"
 
 using namespace Tintinnabuli;
 
