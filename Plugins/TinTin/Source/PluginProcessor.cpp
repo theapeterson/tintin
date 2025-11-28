@@ -15,35 +15,44 @@ TinTinProcessor::TinTinProcessor()
     loadPianoSound();
 }
 
-void TinTinProcessor::loadPianoSound()
+void TinTinProcessor::loadSample(const void* data,
+                                 int dataSize,
+                                 int rootMidiNote)
 {
-    DBG("C4 sample size = " << BinaryData::C4_wavSize);
+    auto input = std::make_unique<juce::MemoryInputStream>(data, dataSize, false);
 
-    auto input = std::make_unique<juce::MemoryInputStream>(
-        BinaryData::C4_wav,
-        BinaryData::C4_wavSize,
-        false
-    );
-
-    if (auto* reader = formatManager.createReaderFor (std::move (input)))
+    if (auto* reader = formatManager.createReaderFor(std::move(input)))
     {
         juce::BigInteger notes;
-        notes.setRange (0, 128, true); // respond to all keys
+        notes.setRange(0, 128, true);
 
         auto* sound = new juce::SamplerSound(
-            "IntimateC4",
+            "IntimateSample",
             *reader,
             notes,
-            60,    // root pitch: C4
+            rootMidiNote,
             0.0,   // attack
             0.2,   // release
             10.0   // max length
         );
 
-        piano.addSound (sound);
+        piano.addSound(sound);
     }
-    else DBG("Reader = nullptr (could not read WAV!)");
+    else
+    {
+        DBG("Reader = nullptr (could not read sample!)");
+    }
+}
 
+void TinTinProcessor::loadPianoSound()
+{
+    DBG("C4 size = " << BinaryData::C4_wavSize);
+    DBG("Fs3 size = " << BinaryData::Fs4_wavSize);
+    DBG("A2 size = " << BinaryData::A2_wavSize);
+
+    loadSample(BinaryData::C4_wav,  BinaryData::C4_wavSize, 60); // C4
+    loadSample(BinaryData::Fs4_wav, BinaryData::Fs4_wavSize, 54); // F#3
+    loadSample(BinaryData::A2_wav,  BinaryData::A2_wavSize, 45); // A2
 }
 
 void TinTinProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)

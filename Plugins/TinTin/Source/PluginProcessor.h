@@ -25,6 +25,7 @@ public:
 
 private:
     void updateOptions();
+    void loadSample(const void* data, int dataSize, int rootMidiNote);
     void loadPianoSound();
 
     Parameters params;

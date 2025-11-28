@@ -1,11 +1,12 @@
 project(TinTin VERSION 0.0.1)
 
-set (BaseTargetName TinTin)
+set(BaseTargetName TinTin)
 
 juce_add_binary_data(TintinPianoSamples
         SOURCES
         Source/Assets/C4.wav
-
+        Source/Assets/A2.wav
+        Source/Assets/Fs4.wav
 )
 
 juce_add_plugin("${BaseTargetName}"
@@ -23,8 +24,6 @@ juce_add_plugin("${BaseTargetName}"
         PLUGIN_CODE NPtm
         FORMATS AU VST3 Standalone
         PRODUCT_NAME "LA")
-
-
 
 target_compile_definitions(${BaseTargetName}
         PUBLIC
