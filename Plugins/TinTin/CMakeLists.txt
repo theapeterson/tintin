@@ -5,6 +5,7 @@ set (BaseTargetName TinTin)
 juce_add_binary_data(TintinPianoSamples
         SOURCES
         Source/Assets/C4.wav
+
 )
 
 juce_add_plugin("${BaseTargetName}"
@@ -21,7 +22,7 @@ juce_add_plugin("${BaseTargetName}"
         PLUGIN_MANUFACTURER_CODE Thea
         PLUGIN_CODE NPtm
         FORMATS AU VST3 Standalone
-        PRODUCT_NAME "Tintinabulator")
+        PRODUCT_NAME "LA")
 
 
 
