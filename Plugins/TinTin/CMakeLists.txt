@@ -47,7 +47,13 @@ target_link_libraries(${BaseTargetName} PRIVATE
 target_sources(${BaseTargetName} PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
-        Source/Tintin/TintinTypes.h
-        Source/Tintin/TintinMapper.h
-        Source/Tintin/TintinMapper.cpp
+
+        Source/TintinSettings.h
+        Source/TintinChord.h
+        Source/TintinQuantizer.h
+        Source/TintinQuantizer.cpp
+        Source/TintinScheduler.h
+        Source/TintinScheduler.cpp
+        Source/TintinMapper.h
+        Source/TintinMapper.cpp
 )

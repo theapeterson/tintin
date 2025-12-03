@@ -60,7 +60,6 @@ void TinTinProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     DBG("Voices: " << piano.getNumVoices());
     DBG("Sounds: " << piano.getNumSounds());
 
-
     juce::ignoreUnused (samplesPerBlock);
     piano.setCurrentPlaybackSampleRate (sampleRate);
     tintin.resetOrbit();
@@ -69,56 +68,78 @@ void TinTinProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void TinTinProcessor::updateOptions()
 {
-    using namespace Tintinnabuli;
-
-    auto& c = tintin.context;
+    auto& c = tintin.settings;
 
     c.rootNote = params.rootNote->get();
     c.triad    = (params.triadType->getIndex() == 0
-                     ? TriadType::Major
-                     : TriadType::Minor);
+                      ? TintinSettings::TriadType::Major
+                      : TintinSettings::TriadType::Minor);
 
     switch (params.modeSelect->getIndex())
     {
-        case 0: c.mode = TMode::Plus1;  break;
-        case 1: c.mode = TMode::Plus2;  break;
-        case 2: c.mode = TMode::Minus1; break;
-        case 3: c.mode = TMode::Minus2; break;
-        case 4: c.mode = TMode::Orbit;  break;
-        default: c.mode = TMode::Plus1; break;
+        case 0: c.mode = TintinSettings::TMode::Plus1;  break;
+        case 1: c.mode = TintinSettings::TMode::Plus2;  break;
+        case 2: c.mode = TintinSettings::TMode::Minus1; break;
+        case 3: c.mode = TintinSettings::TMode::Minus2; break;
+        case 4: c.mode = TintinSettings::TMode::Orbit;  break;
+        default: c.mode = TintinSettings::TMode::Plus1; break;
     }
 
     c.octaveOffset = params.octaveOffset->get();
 
-    // 0 = Follow, 1 = Scaled, 2 = Fixed – matches your UI
     switch (params.velocityMode->getIndex())
     {
-        case 0: c.velocityMode = VelocityMode::Follow; break;
-        case 1: c.velocityMode = VelocityMode::Scaled; break;
-        case 2: c.velocityMode = VelocityMode::Fixed;  break;
-        default: c.velocityMode = VelocityMode::Follow; break;
+        case 0: c.velocityMode = TintinSettings::VelocityMode::Follow; break;
+        case 1: c.velocityMode = TintinSettings::VelocityMode::Scaled; break;
+        case 2: c.velocityMode = TintinSettings::VelocityMode::Fixed;  break;
+        default: c.velocityMode = TintinSettings::VelocityMode::Follow; break;
     }
 
-    // TODO: if you add UI controls for scale/fixed values, set them here
-    c.velocityScale = 0.7f;
-    c.fixedVelocity = 90;
+    c.velocityScale = params.velocityScaleParam->get();
+    c.fixedVelocity = params.fixedVelocityParam->get();
+
+    switch (params.displacementMode->getIndex())
+    {
+        case 0: c.displacementMode = TintinSettings::DisplacementMode::None;     break;
+        case 1: c.displacementMode = TintinSettings::DisplacementMode::Sync;     break;
+        case 2: c.displacementMode = TintinSettings::DisplacementMode::Absolute; break;
+        default: c.displacementMode = TintinSettings::DisplacementMode::None;    break;
+    }
+
+    c.syncIndex      = params.displacementSync->get();
+    c.displacementMs = params.displacementMs->get();
+
+    c.scaleIndex      = params.scaleSelect->getIndex();
+    c.feedbackRepeats = 0;   // for future UI
+    c.numTVoices      = 1;   // for future UI
 }
 
-void TinTinProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                    juce::MidiBuffer& midiMessages)
+void TinTinProcessor::processBlock(juce::AudioBuffer<float>& buffer,
+                                   juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-
     buffer.clear();
 
     updateOptions();
 
-    // 1) Transform M-voice MIDI → T-voice MIDI
-    // tintin.process (midiMessages);
+    // tempo for sync displacement
+    double bpm = 120.0;
+    if (auto* playHead = getPlayHead())
+    {
+        juce::AudioPlayHead::CurrentPositionInfo pos;
+        if (playHead->getCurrentPosition(pos) && pos.bpm > 0.0)
+            bpm = pos.bpm;
+    }
+    tintin.settings.bpm = bpm;
 
-    // 2) Render piano from transformed MIDI
-    piano.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
+    // process MIDI through tintin engine
+    tintin.process(midiMessages, getSampleRate(), buffer.getNumSamples());
+
+    // render from transformed MIDI
+    piano.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
 }
+
+
 
 juce::AudioProcessorEditor* TinTinProcessor::createEditor()
 {

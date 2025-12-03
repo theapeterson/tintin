@@ -1,3 +1,4 @@
+//Plugins/Tintin/Source/Tintin/PluginEditor.cpp
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 

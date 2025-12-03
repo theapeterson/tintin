@@ -1,3 +1,4 @@
+//Plugins/Tintin/Source/Tintin/PluginEditor.h
 #pragma once
 
 #include "PluginProcessor.h"
@@ -10,6 +11,5 @@ private:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    // juce::GenericAudioProcessorEditor genericEditor {processor};
     juce::GenericAudioProcessorEditor genericEditor;
 };

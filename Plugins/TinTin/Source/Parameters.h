@@ -1,70 +1,9 @@
+//Plugins/Tintin/Source/Tintin/Parameters.h
 #pragma once
 
 #include <shared_plugin_helpers/shared_plugin_helpers.h>
 
-// struct Parameters
-// {
-//     struct IDs
-//     {
-//         static constexpr auto rootNote     = "rootNote";
-//         static constexpr auto triadType    = "triadType";
-//         static constexpr auto tMode        = "tMode";
-//         static constexpr auto octaveOffset = "octaveOffset";
-//         static constexpr auto velocityMode = "velocityMode";
-//     };
-//
-//     void add(juce::AudioProcessor& processor) const
-//     {
-//         processor.addParameter(gain);
-//         processor.addParameter(enable);
-//     }
-//
-//     //Raw pointers. They will be owned by either the processor or the APVTS (if you use it)
-//     juce::AudioParameterFloat* gain =
-//         new juce::AudioParameterFloat({"Gain", 1}, "Gain", 0.f, 1.f, 0.5f);
-//
-//     juce::AudioParameterBool* enable =
-//         new juce::AudioParameterBool({"Enable", 1}, "Enable", true);
-// };
-//
-// #pragma once
-//
-// #include <shared_plugin_helpers/shared_plugin_helpers.h>
-//
-// namespace Params
-// {
-// struct IDs
-// {
-//     static constexpr auto root = "root";
-//     static constexpr auto triad = "triad";
-//     static constexpr auto mode = "mode";
-//     static constexpr auto octave = "octave";
-//     static constexpr auto velocity = "velocity";
-// };
-//
-// inline void addAll(PluginHelpers::ParameterList& params)
-// {
-//     using namespace juce;
-//
-//     params.add(std::make_unique<AudioParameterInt>(IDs::root,
-//         "Root", 0, 127, 60));
-//
-//     params.add(std::make_unique<AudioParameterChoice>(IDs::triad,
-//         "Triad", StringArray{ "Major", "Minor" }, 1));
-//
-//     params.add(std::make_unique<AudioParameterChoice>(IDs::mode,
-//         "T-Mode", StringArray{ "T+1", "T+2", "T-1", "T-2", "Orbit" }, 0));
-//
-//     params.add(std::make_unique<AudioParameterInt>(IDs::octave,
-//         "Octave", -3, 3, 0));
-//
-//     params.add(std::make_unique<AudioParameterChoice>(IDs::velocity,
-//         "Velocity", StringArray{ "Follow", "Scaled", "Fixed" }, 0));
-// }
-// } // namespace Params
 #pragma once
-
-#include <shared_plugin_helpers/shared_plugin_helpers.h>
 
 struct Parameters
 {
@@ -75,6 +14,13 @@ struct Parameters
         static constexpr auto mode     = "mode";
         static constexpr auto octave   = "octave";
         static constexpr auto velocity = "velocity";
+        static constexpr auto dispMode   = "dispMode";
+        static constexpr auto dispSync   = "dispSync";
+        static constexpr auto dispMs     = "dispMs";
+        static constexpr auto velScale   = "velScale";
+        static constexpr auto velFixed   = "velFixed";
+        static constexpr auto scale      = "scale";
+
     };
 
     void add(juce::AudioProcessor& p) const
@@ -84,6 +30,13 @@ struct Parameters
         p.addParameter(modeSelect);
         p.addParameter(octaveOffset);
         p.addParameter(velocityMode);
+        p.addParameter(displacementMode);
+        p.addParameter(displacementSync);
+        p.addParameter(displacementMs);
+        p.addParameter(velocityScaleParam);
+        p.addParameter(fixedVelocityParam);
+        p.addParameter(scaleSelect);
+
     }
 
     juce::AudioParameterInt* rootNote =
@@ -111,4 +64,40 @@ struct Parameters
                                                           "Scaled",
                                                           "Fixed" },
                                        0);
+    juce::AudioParameterChoice* displacementMode =
+    new juce::AudioParameterChoice({ IDs::dispMode, 1 }, "Displacement",
+                                   juce::StringArray{ "None", "Sync", "Absolute" }, 0);
+
+    juce::AudioParameterInt* displacementSync =
+        new juce::AudioParameterInt({ IDs::dispSync, 1 }, "Sync Index",
+                                    0, 15, 0); // 16 sync values
+
+    juce::AudioParameterFloat* displacementMs =
+        new juce::AudioParameterFloat({ IDs::dispMs, 1 }, "Delay (ms)",
+                                      10.0f, 2000.0f, 100.0f);
+
+    juce::AudioParameterFloat* velocityScaleParam =
+        new juce::AudioParameterFloat({ IDs::velScale, 1 }, "Velocity Scale",
+                                      0.0f, 1.0f, 1.0f);
+
+    juce::AudioParameterInt* fixedVelocityParam =
+        new juce::AudioParameterInt({ IDs::velFixed, 1 }, "Fixed Velocity",
+                                    1, 127, 90);
+
+    juce::AudioParameterChoice* scaleSelect =
+        new juce::AudioParameterChoice({ IDs::scale, 1 }, "Scale",
+            juce::StringArray{
+                "Chromatic",
+                "Major",
+                "Minor",
+                "Dorian",
+                "Phrygian",
+                "Lydian",
+                "Mixolydian",
+                "Locrian",
+                "Pentatonic Major",
+                "Pentatonic Minor"
+            },
+            0);
+
 };
