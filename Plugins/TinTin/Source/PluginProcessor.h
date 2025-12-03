@@ -24,6 +24,9 @@ public:
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
 
+    Parameters& getParams() { return params; }
+    const Parameters& getParams() const { return params; }
+
 private:
     void updateOptions();
     void loadSample(const void* data, int dataSize, int rootMidiNote);

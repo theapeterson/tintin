@@ -35,30 +35,30 @@ int TintinQuantizer::quantize(int midiNote,
                               int rootMidiNote)
 {
     if (scaleIndex == 0)
-        return midiNote; // chromatic, no quantize
+        return midiNote; // chromatic
 
     auto scale = getScale(scaleIndex);
     if (scale.empty())
         return midiNote;
 
-    auto pc = wrapPc(midiNote - rootMidiNote);
+    int inputPc = wrapPc(midiNote - rootMidiNote);
 
     int bestPc = scale[0];
     int bestDist = 128;
 
-    for (auto s : scale)
+    for (int s : scale)
     {
-        auto diff = s - pc;
-        if (diff < 0)
-            diff = -diff;
+        int dist = (s - inputPc + 12) % 12;  // upward distance
 
-        if (diff < bestDist)
+        if (dist < bestDist)
         {
-            bestDist = diff;
+            bestDist = dist;
             bestPc = s;
         }
     }
 
-    auto baseOct = midiNote / 12;
-    return baseOct * 12 + rootMidiNote + bestPc - (rootMidiNote % 12);
+    int baseOct = midiNote / 12;
+    int tonicPc = rootMidiNote % 12;
+
+    return baseOct * 12 + tonicPc + bestPc;
 }
