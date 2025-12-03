@@ -11,6 +11,7 @@ struct TintinSettings
 
     enum class TMode
     {
+        None,
         Plus1,
         Plus2,
         Minus1,
@@ -52,4 +53,6 @@ struct TintinSettings
     int numTVoices = 1;         // optional extra voices (refine for v2....?)
 
     double bpm = 120.0;         // host tempo, needed for sync displacement..
+
+    bool mVoiceOn = true;
 };

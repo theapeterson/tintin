@@ -20,7 +20,7 @@ struct Parameters
         static constexpr auto velScale   = "velScale";
         static constexpr auto velFixed   = "velFixed";
         static constexpr auto scale      = "scale";
-
+        static constexpr auto mVoice   = "mvoice";
     };
 
     void add(juce::AudioProcessor& p) const
@@ -36,7 +36,7 @@ struct Parameters
         p.addParameter(velocityScaleParam);
         p.addParameter(fixedVelocityParam);
         p.addParameter(scaleSelect);
-
+        p.addParameter(mVoiceOn);
     }
 
     juce::AudioParameterInt* rootNote =
@@ -49,7 +49,8 @@ struct Parameters
 
     juce::AudioParameterChoice* modeSelect =
         new juce::AudioParameterChoice({ IDs::mode, 1 }, "T-Mode",
-                                       juce::StringArray{ "T+1", "T+2",
+                                       juce::StringArray{ "None",
+                                                          "T+1", "T+2",
                                                           "T-1", "T-2",
                                                           "Orbit" },
                                        0);
@@ -99,5 +100,7 @@ struct Parameters
                 "Pentatonic Minor"
             },
             0);
+    juce::AudioParameterBool* mVoiceOn =
+    new juce::AudioParameterBool({ IDs::mVoice, 1 }, "M Voice Heard", true);
 
 };

@@ -77,11 +77,12 @@ void TinTinProcessor::updateOptions()
 
     switch (params.modeSelect->getIndex())
     {
-        case 0: c.mode = TintinSettings::TMode::Plus1;  break;
-        case 1: c.mode = TintinSettings::TMode::Plus2;  break;
-        case 2: c.mode = TintinSettings::TMode::Minus1; break;
-        case 3: c.mode = TintinSettings::TMode::Minus2; break;
-        case 4: c.mode = TintinSettings::TMode::Orbit;  break;
+        case 0: c.mode = TintinSettings::TMode::None;   break;
+        case 1: c.mode = TintinSettings::TMode::Plus1;  break;
+        case 2: c.mode = TintinSettings::TMode::Plus2;  break;
+        case 3: c.mode = TintinSettings::TMode::Minus1; break;
+        case 4: c.mode = TintinSettings::TMode::Minus2; break;
+        case 5: c.mode = TintinSettings::TMode::Orbit;  break;
         default: c.mode = TintinSettings::TMode::Plus1; break;
     }
 
@@ -112,6 +113,7 @@ void TinTinProcessor::updateOptions()
     c.scaleIndex      = params.scaleSelect->getIndex();
     c.feedbackRepeats = 0;   // for future UI
     c.numTVoices      = 1;   // for future UI
+    c.mVoiceOn        = params.mVoiceOn->get();
 }
 
 void TinTinProcessor::processBlock(juce::AudioBuffer<float>& buffer,

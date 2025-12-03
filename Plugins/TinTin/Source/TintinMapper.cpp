@@ -1,5 +1,6 @@
 // Plugins/TinTin/Source/Tintin/TintinMapper.cpp
 #include "TintinMapper.h"
+#include "TintinQuantizer.h"
 #include <algorithm>
 
 static int toPitchClass(int midi)
@@ -76,97 +77,100 @@ void TintinMapper::resetOrbit()
     scheduler.clear();
 }
 
-void TintinMapper::process(juce::MidiBuffer& midi,
-                           double sampleRate,
-                           int numSamples)
+void TintinMapper::process (juce::MidiBuffer& midi,
+                            double sampleRate,
+                            int numSamples)
 {
-    // build chord from current settings
-    chord.setFromTriad(settings.rootNote, settings.triad);
+    // build chord for this block
+    chord.setFromTriad (settings.rootNote, settings.triad);
 
-    juce::MidiBuffer output;
+    juce::MidiBuffer out;
 
-    // keep original M-voice events
-    for (const auto metadata : midi)
-        output.addEvent(metadata.getMessage(), metadata.samplePosition);
-
-    // generate T-voice
-    for (const auto metadata : midi)
+    // M-voice passthrough
+    if (settings.mVoiceOn)
     {
-        auto msg = metadata.getMessage();
-        auto pos = metadata.samplePosition;
+        for (const auto m : midi)
+            out.addEvent (m.getMessage(), m.samplePosition);
+    }
 
-        if (! (msg.isNoteOn() || msg.isNoteOff()))
+    // skip T-voice if mode == None
+    if (settings.mode == TintinSettings::TMode::None)
+    {
+        midi.swapWith (out);
+        return;
+    }
+
+    // process M→T mapping
+    for (const auto m : midi)
+    {
+        const auto msg = m.getMessage();
+        const auto pos = m.samplePosition;
+
+        if (!msg.isNoteOnOrOff())
             continue;
 
-        auto mNote = msg.getNoteNumber();
-        auto qNote = applyQuantizer(mNote);
-        auto tNote = computeTintinNote(qNote);
+        const int mNote = msg.getNoteNumber();
+        const int qNote = applyQuantizer (mNote);
+        const int tNote = computeTintinNote (qNote);
 
-        auto delaySec = getDelaySeconds(settings);
-        int delaySamples = (int) std::round(delaySec * sampleRate);
-
-        if (delaySamples < 0)
-            delaySamples = 0;
+        const double delaySec = getDelaySeconds (settings);
+        int delaySamples = (int) std::round (delaySec * sampleRate);
+        if (delaySamples < 0) delaySamples = 0;
 
         if (msg.isNoteOn())
         {
-            auto mVel = (int) msg.getVelocity();
-            auto tVel = applyVelocity(mVel);
+            const int mVel = msg.getVelocity();
+            const int tVel = applyVelocity (mVel);
+            const juce::MidiMessage tOn =
+                juce::MidiMessage::noteOn (msg.getChannel(), tNote, (juce::uint8) tVel);
 
-            juce::MidiMessage tOn { juce::MidiMessage::noteOn(msg.getChannel(),
-                                                              tNote,
-                                                              (juce::uint8) tVel) };
+            scheduler.add (tOn, delaySamples, pos);
 
-            scheduler.add(tOn, delaySamples, pos);
-
-            // feedback repeats
+            // repeats
             for (int r = 0; r < settings.feedbackRepeats; ++r)
             {
-                auto extraDelay = delaySamples * (r + 1);
-                scheduler.add(tOn, delaySamples + extraDelay, pos);
+                const int extra = delaySamples * (r + 1);
+                scheduler.add (tOn, delaySamples + extra, pos);
             }
 
-            // multiple T voices (basic: extra voice mirrored)
+            // additional T voices (simple v1)
             for (int v = 1; v < settings.numTVoices; ++v)
             {
-                // simple: alternate direction for second voice
-                auto altNote = tNote;
+                const juce::MidiMessage altOn =
+                    juce::MidiMessage::noteOn (msg.getChannel(), tNote, (juce::uint8) tVel);
 
-                if (settings.mode == TintinSettings::TMode::Plus1)
-                    altNote = computeTintinNote(qNote); // same for now; can be extended
-
-                juce::MidiMessage altOn { juce::MidiMessage::noteOn(msg.getChannel(),
-                                                                    altNote,
-                                                                    (juce::uint8) tVel) };
-                scheduler.add(altOn, delaySamples, pos);
+                scheduler.add (altOn, delaySamples, pos);
             }
         }
-        else if (msg.isNoteOff())
+        else // note off
         {
-            juce::MidiMessage tOff { juce::MidiMessage::noteOff(msg.getChannel(), tNote) };
+            const juce::MidiMessage tOff =
+                juce::MidiMessage::noteOff (msg.getChannel(), tNote);
 
-            scheduler.add(tOff, delaySamples, pos);
+            scheduler.add (tOff, delaySamples, pos);
 
             for (int r = 0; r < settings.feedbackRepeats; ++r)
             {
-                auto extraDelay = delaySamples * (r + 1);
-                scheduler.add(tOff, delaySamples + extraDelay, pos);
+                const int extra = delaySamples * (r + 1);
+                scheduler.add (tOff, delaySamples + extra, pos);
             }
 
             for (int v = 1; v < settings.numTVoices; ++v)
             {
-                juce::MidiMessage altOff { juce::MidiMessage::noteOff(msg.getChannel(), tNote) };
-                scheduler.add(altOff, delaySamples, pos);
+                const juce::MidiMessage altOff =
+                    juce::MidiMessage::noteOff (msg.getChannel(), tNote);
+
+                scheduler.add (altOff, delaySamples, pos);
             }
         }
     }
 
-    // emit scheduled T-voice events for this block
-    scheduler.processBlock(output, numSamples);
+    // emit all scheduled events for this block
+    scheduler.processBlock (out, numSamples);
 
-    midi.swapWith(output);
+    // swap buffers
+    midi.swapWith (out);
 }
-
 
 int TintinMapper::computeTintinNote(int mNote)
 {
