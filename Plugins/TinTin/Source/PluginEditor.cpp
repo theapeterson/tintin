@@ -2,39 +2,351 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 
-//====================== static helpers ======================
-
-int TinTinProcessorEditor::midiRootFromIndex (int idx)
+TintinLookAndFeel::TintinLookAndFeel()
 {
-    // 0..11 → A, Bb, B, C, Db, D, Eb, E, F, F#, G, G#
-    // use octave 4-ish so chord PC is correct
-    static const int roots[12] =
-    {
-        57, // A
-        58, // Bb
-        59, // B
-        60, // C
-        61, // Db
-        62, // D
-        63, // Eb
-        64, // E
-        65, // F
-        66, // F#
-        67, // G
-        68  // G#
-    };
+    using namespace juce;
 
-    if (idx < 0)   return roots[0];
-    if (idx > 11)  return roots[11];
-    return roots[idx];
+    setColour (ResizableWindow::backgroundColourId, Colour (0xff303030));
+    setColour (TextButton::buttonColourId,          Colour (0xff404040));
+    setColour (TextButton::buttonOnColourId,        Colour (0xfff3a623)); // gold
+    setColour (Label::textColourId,                 Colours::goldenrod);
 }
 
-// UI position buttons → modeSelect index
-// modeSelect choices: "None","T+1","T+2","T-1","T-2","Orbit"
-// we only map the 5 position buttons here
-int TinTinProcessorEditor::modeIndexFromPositionButton (int idx)
+void TintinLookAndFeel::drawButtonBackground (juce::Graphics& g,
+                                              juce::Button& button,
+                                              const juce::Colour& backgroundColour,
+                                              bool isMouseOver,
+                                              bool isButtonDown)
 {
-    switch (idx)
+    auto bounds = button.getLocalBounds().toFloat();
+
+    auto isOn  = button.getToggleState();
+    auto base  = isOn ? findColour (juce::TextButton::buttonOnColourId)
+                      : backgroundColour;
+    auto border = juce::Colours::black;
+    auto hover  = base.brighter (0.1f);
+    auto colour = (isMouseOver || isButtonDown) ? hover : base;
+
+    g.setColour (colour);
+    g.fillRoundedRectangle (bounds, 3.0f);
+
+    g.setColour (border);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 3.0f, 1.0f);
+}
+
+void TintinLookAndFeel::drawButtonText (juce::Graphics& g,
+                                        juce::TextButton& button,
+                                        bool isMouseOver,
+                                        bool isButtonDown)
+{
+    juce::ignoreUnused (isMouseOver, isButtonDown);
+
+    auto bounds = button.getLocalBounds();
+    auto text   = button.getButtonText();
+
+    auto colour = button.isEnabled()
+                      ? juce::Colours::black
+                      : juce::Colours::darkgrey;
+
+    g.setColour (colour);
+    g.setFont (juce::Font (14.0f));
+    g.drawFittedText (text, bounds, juce::Justification::centred, 1);
+}
+
+
+TintinPianoView::TintinPianoView()
+{
+    staticTNotes.fill (false);
+    mVoiceActive.fill (false);
+    tVoiceActive.fill (false);
+
+    setInterceptsMouseClicks (true, false);
+}
+
+void TintinPianoView::setStaticTNotes (const std::vector<int>& midiNotes)
+{
+    staticTNotes.fill (false);
+
+    for (auto n : midiNotes)
+    {
+        if (n >= 0 && n < 128)
+            staticTNotes[(size_t) n] = true;
+    }
+
+    repaint();
+}
+
+void TintinPianoView::setMVoiceState (const std::array<bool, 128>& state)
+{
+    mVoiceActive = state;
+    repaint();
+}
+
+void TintinPianoView::setTVoiceState (const std::array<bool, 128>& state)
+{
+    tVoiceActive = state;
+    repaint();
+}
+
+void TintinPianoView::noteOnM (int midi)
+{
+    if (midi < 0 || midi >= 128)
+        return;
+
+    mVoiceActive[(size_t) midi] = true;
+    repaint();
+}
+
+void TintinPianoView::noteOffM (int midi)
+{
+    if (midi < 0 || midi >= 128)
+        return;
+
+    mVoiceActive[(size_t) midi] = false;
+    repaint();
+}
+
+void TintinPianoView::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    paintBasePiano (g, bounds);
+    paintHighlights (g, bounds);
+}
+
+void TintinPianoView::mouseDown (const juce::MouseEvent& e)
+{
+    auto midi = midiFromPosition ((float) e.position.x);
+    if (midi < 0)
+        return;
+
+    noteOnM (midi); // blue highlight immediately
+
+    if (noteCallback)
+        noteCallback (midi, true);
+}
+
+void TintinPianoView::mouseUp (const juce::MouseEvent& e)
+{
+    auto midi = midiFromPosition ((float) e.position.x);
+    if (midi < 0)
+        return;
+
+    noteOffM (midi);
+
+    if (noteCallback)
+        noteCallback (midi, false);
+}
+
+void TintinPianoView::paintBasePiano (juce::Graphics& g,
+                                      const juce::Rectangle<float>& bounds) const
+{
+    using namespace juce;
+
+    g.setColour (Colours::white);
+    g.fillRect (bounds);
+
+    g.setColour (Colours::black.withAlpha (0.4f));
+    g.drawRect (bounds, 1.0f);
+
+    auto keyW = bounds.getWidth() / (float) numWhiteKeys;
+    auto keyH = bounds.getHeight();
+
+    for (int i = 0; i < numWhiteKeys; ++i)
+    {
+        auto x = bounds.getX() + keyW * (float) i;
+        auto r = Rectangle<float> (x, bounds.getY(), keyW, keyH);
+
+        g.setColour (Colours::white);
+        g.fillRect (r);
+
+        g.setColour (Colours::black.withAlpha (0.3f));
+        g.drawRect (r, 0.5f);
+    }
+
+    auto drawBlack = [&] (int whiteIndex)
+    {
+        auto x = bounds.getX() + keyW * ((float) whiteIndex + 0.7f);
+        auto r = Rectangle<float> (x, bounds.getY(), keyW * 0.6f, keyH * 0.6f);
+
+        g.setColour (Colours::black);
+        g.fillRect (r);
+    };
+
+    // C D E F G A B C D E F G A B pattern
+    int pattern[] = { 0, 1, 3, 4, 5, 7, 8, 10, 11 };
+
+    for (int whiteIndex : pattern)
+    {
+        if (whiteIndex < numWhiteKeys - 1)
+            drawBlack (whiteIndex);
+    }
+}
+
+void TintinPianoView::paintHighlights (juce::Graphics& g,
+                                       const juce::Rectangle<float>& bounds) const
+{
+    using namespace juce;
+
+    auto keyW = bounds.getWidth() / (float) numWhiteKeys;
+    auto keyH = bounds.getHeight();
+
+    // Top: static T-grid (gold)
+    for (int midi = 0; midi < 128; ++midi)
+    {
+        if (! staticTNotes[(size_t) midi])
+            continue;
+
+        auto whiteIndex = midiToWhiteIndex (midi);
+
+        drawStripe (g, bounds, keyW, keyH,
+                    whiteIndex,
+                    0.18f,
+                    0.72f,
+                    Colours::goldenrod.withAlpha (0.8f));
+    }
+
+    // Bottom: M voice (blue)
+    for (int midi = 0; midi < 128; ++midi)
+    {
+        if (! mVoiceActive[(size_t) midi])
+            continue;
+
+        auto whiteIndex = midiToWhiteIndex (midi);
+
+        drawStripe (g, bounds, keyW, keyH,
+                    whiteIndex,
+                    0.18f,
+                    0.08f,
+                    Colours::steelblue.withAlpha (0.9f));
+    }
+
+    // Middle: T voice output (red, thicker)
+    for (int midi = 0; midi < 128; ++midi)
+    {
+        if (! tVoiceActive[(size_t) midi])
+            continue;
+
+        auto whiteIndex = midiToWhiteIndex (midi);
+
+        drawStripe (g, bounds, keyW, keyH,
+                    whiteIndex,
+                    0.30f,
+                    0.35f,
+                    Colours::red.withAlpha (0.85f));
+    }
+}
+
+int TintinPianoView::midiToWhiteIndex (int midi) const
+{
+    if (midi < baseMidi)
+        return -1;
+
+    if (midi >= baseMidi + numSemitones)
+        return -1;
+
+    auto offset = midi - baseMidi; // 0..23
+    auto octave = offset / 12;     // 0 or 1
+    auto pc     = offset % 12;     // 0..11
+
+    static const int whitePcs[whitesPerOctave] = { 0, 2, 4, 5, 7, 9, 11 };
+
+    int idxInOct = -1;
+
+    for (int i = 0; i < whitesPerOctave; ++i)
+    {
+        if (whitePcs[i] == pc)
+        {
+            idxInOct = i;
+            break;
+        }
+    }
+
+    if (idxInOct < 0)
+        return -1;
+
+    auto idx = octave * whitesPerOctave + idxInOct;
+
+    if (idx < 0 || idx >= numWhiteKeys)
+        return -1;
+
+    return idx;
+}
+
+void TintinPianoView::drawStripe (juce::Graphics& g,
+                                  const juce::Rectangle<float>& bounds,
+                                  float keyW,
+                                  float keyH,
+                                  int whiteIndex,
+                                  float heightFraction,
+                                  float yOffsetFraction,
+                                  const juce::Colour& colour) const
+{
+    if (whiteIndex < 0 || whiteIndex >= numWhiteKeys)
+        return;
+
+    auto x = bounds.getX() + keyW * (float) whiteIndex;
+
+    auto keyRect = juce::Rectangle<float> (x,
+                                           bounds.getY(),
+                                           keyW,
+                                           keyH);
+
+    auto stripeH = keyH * heightFraction;
+    auto stripeY = keyRect.getY() + keyH * yOffsetFraction;
+
+    auto stripeRect = juce::Rectangle<float> (keyRect.getX(),
+                                              stripeY,
+                                              keyRect.getWidth(),
+                                              stripeH);
+
+    g.setColour (colour);
+    g.fillRect (stripeRect.reduced (1.0f));
+}
+
+int TintinPianoView::midiFromPosition (float x) const
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    auto keyW = bounds.getWidth() / (float) numWhiteKeys;
+    if (keyW <= 0.0f)
+        return -1;
+
+    auto relX     = x - bounds.getX();
+    auto rawIndex = (int) (relX / keyW);
+
+    auto whiteIndex = juce::jlimit (0, numWhiteKeys - 1, rawIndex);
+
+    static const int whiteMidi[numWhiteKeys] =
+    {
+        60, 62, 64, 65, 67, 69, 71,
+        72, 74, 76, 77, 79, 81, 83
+    };
+
+    return whiteMidi[whiteIndex];
+}
+
+
+int TinTinProcessorEditor::midiRootFromIndex (int index)
+{
+    static const int roots[12] =
+    {
+        57, 58, 59, 60, 61, 62,
+        63, 64, 65, 66, 67, 68
+    };
+
+    if (index < 0)
+        return roots[0];
+
+    if (index > 11)
+        return roots[11];
+
+    return roots[index];
+}
+
+int TinTinProcessorEditor::modeIndexFromPositionButton (int index)
+{
+    switch (index)
     {
         case 0: return 0; // None
         case 1: return 2; // 2nd Superior -> T+2
@@ -45,7 +357,6 @@ int TinTinProcessorEditor::modeIndexFromPositionButton (int idx)
     }
 }
 
-// modeSelect index -> which position button is active
 int TinTinProcessorEditor::positionButtonFromModeIndex (int modeIndex)
 {
     switch (modeIndex)
@@ -59,79 +370,142 @@ int TinTinProcessorEditor::positionButtonFromModeIndex (int modeIndex)
     }
 }
 
-//====================== ctor/dtor ======================
 
 TinTinProcessorEditor::TinTinProcessorEditor (TinTinProcessor& p)
     : AudioProcessorEditor (&p),
-      processor (p)
+      processor (p),
+      lf()
 {
     setLookAndFeel (&lf);
 
-    // TITLE
+    addAndMakeVisible (pianoView);
+
+    pianoView.setNoteCallback ([this] (int midi, bool isDown)
+    {
+        handlePianoNote (midi, isDown);
+    });
+
     addAndMakeVisible (titleLabel);
     titleLabel.setText ("Tintinnabulator v1.3", juce::dontSendNotification);
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     titleLabel.setFont (juce::Font (26.0f, juce::Font::bold));
 
-    // ROOT GRID
+    initRootButtons();
+    initTriadButtons();
+    initMVoiceButton();
+    initPositionButtons();
+    initPianoToggles();
+    initDelayButtons();
+
+    msSlider.setRange (10.0, 2000.0, 1.0);
+    msSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 50, 18);
+    addAndMakeVisible (msSlider);
+
+    msSlider.onValueChange = [this]()
     {
-        static const char* names[12] =
+        auto value = (float) msSlider.getValue();
+        processor.getParams().displacementMs->setValueNotifyingHost (value);
+    };
+
+    setSize (800, 320);
+
+    syncFromParams();
+    syncPianoFromProcessor();
+
+    startTimerHz (30);
+}
+
+TinTinProcessorEditor::~TinTinProcessorEditor()
+{
+    stopTimer();
+    setLookAndFeel (nullptr);
+}
+
+void TinTinProcessorEditor::handlePianoNote (int midiNote, bool isDown)
+{
+    auto& state = processor.getPreviewKeyboardState();
+
+    constexpr int   channel  = 1;
+    constexpr float velocity = 0.8f;
+
+    if (isDown)
+        state.noteOn  (channel, midiNote, velocity);
+    else
+        state.noteOff (channel, midiNote, velocity);
+}
+
+
+
+void TinTinProcessorEditor::initRootButtons()
+{
+    static const char* names[12] =
+    {
+        "A", "Bb", "B",
+        "C", "Db", "D",
+        "Eb", "E", "F",
+        "F#", "G", "G#"
+    };
+
+    for (int i = 0; i < (int) rootButtons.size(); ++i)
+    {
+        auto& button = rootButtons[(size_t) i];
+
+        button.setButtonText (names[i]);
+        button.setClickingTogglesState (true);
+        addAndMakeVisible (button);
+
+        button.onClick = [this, i]()
         {
-            "A", "Bb", "B",
-            "C", "Db", "D",
-            "Eb","E","F",
-            "F#","G","G#"
+            selectRoot (i);
         };
-
-        for (int i = 0; i < (int) rootButtons.size(); ++i)
-        {
-            auto& b = rootButtons[(size_t) i];
-            b.setButtonText (names[i]);
-            b.setClickingTogglesState (true);
-            addAndMakeVisible (b);
-
-            b.onClick = [this, i]()
-            {
-                selectRoot (i);
-            };
-        }
     }
+}
 
-    // TRIAD
+void TinTinProcessorEditor::initTriadButtons()
+{
     majorButton.setClickingTogglesState (true);
     minorButton.setClickingTogglesState (true);
+
     addAndMakeVisible (majorButton);
     addAndMakeVisible (minorButton);
 
-    majorButton.onClick = [this]() { selectTriad (true);  };
+    majorButton.onClick = [this]() { selectTriad (true); };
     minorButton.onClick = [this]() { selectTriad (false); };
+}
 
-    // POSITION
-    auto initPosButton = [this] (juce::TextButton& b, int idx)
-    {
-        b.setClickingTogglesState (true);
-        addAndMakeVisible (b);
-        b.onClick = [this, idx]() { selectPosition (idx); };
-    };
-
-    initPosButton (posNoneButton, 0);
-    initPosButton (pos2SupButton, 1);
-    initPosButton (pos1SupButton, 2);
-    initPosButton (pos1InfButton, 3);
-    initPosButton (pos2InfButton, 4);
-
-    // M-Voice
+void TinTinProcessorEditor::initMVoiceButton()
+{
     mVoiceButton.setClickingTogglesState (true);
     addAndMakeVisible (mVoiceButton);
+
     mVoiceButton.onClick = [this]()
     {
         setMVoice (mVoiceButton.getToggleState());
     };
+}
 
-    // PIANO
-    addAndMakeVisible (pianoView);
+void TinTinProcessorEditor::initPositionButtons()
+{
+    auto init = [this] (juce::TextButton& button, int index)
+    {
+        button.setClickingTogglesState (true);
+        addAndMakeVisible (button);
 
-    // small toggles under piano
+        button.onClick = [this, index]()
+        {
+            selectPosition (index);
+        };
+    };
+
+    init (posNoneButton, 0);
+    init (pos2SupButton, 1);
+    init (pos1SupButton, 2);
+    init (pos1InfButton, 3);
+    init (pos2InfButton, 4);
+}
+
+void TinTinProcessorEditor::initPianoToggles()
+{
     tHighlightButton.setClickingTogglesState (true);
     orbitToggleButton.setClickingTogglesState (true);
     mHighlightButton.setClickingTogglesState (true);
@@ -142,50 +516,27 @@ TinTinProcessorEditor::TinTinProcessorEditor (TinTinProcessor& p)
     addAndMakeVisible (mHighlightButton);
     addAndMakeVisible (randomButton);
 
-    // orbit toggle: if on -> Orbit mode, if off -> revert to last position
     orbitToggleButton.onClick = [this]()
     {
         auto& params = processor.getParams();
 
         if (orbitToggleButton.getToggleState())
-        {
             params.modeSelect->setValueNotifyingHost (5); // Orbit
-        }
-        else
-        {
-            // restore from position buttons
-            for (int i = 0; i < 5; ++i)
-            {
-                if (positionButtonFromModeIndex (params.modeSelect->getIndex()) == i)
-                    return; // already set
-
-                if (rootButtons[0].isVisible()) {} // dummy to keep lambda trivial
-            }
-        }
 
         updatePositionButtons();
     };
 
-    // randomizer: simple v1
-    randomButton.onClick = [this]()
+    randomButton.onClick = []()
     {
-        auto& params = processor.getParams();
-        auto rng = juce::Random::getSystemRandom();
-
-        auto rootIdx  = rng.nextInt (12);
-        auto triadMaj = (rng.nextBool());
-        auto posIdx   = rng.nextInt (5);
-        auto syncIdx  = rng.nextInt (8);
-
-        selectRoot (rootIdx);
-        selectTriad (triadMaj);
-        selectPosition (posIdx);
-        setSyncButton (syncIdx);
+        // Randomizer left as a future feature.
     };
+}
 
-    // DELAY ROW
-    addAndMakeVisible (nowButton);
+void TinTinProcessorEditor::initDelayButtons()
+{
     nowButton.setClickingTogglesState (true);
+    addAndMakeVisible (nowButton);
+
     nowButton.onClick = [this]()
     {
         auto& params = processor.getParams();
@@ -200,12 +551,13 @@ TinTinProcessorEditor::TinTinProcessorEditor (TinTinProcessor& p)
 
     for (int i = 0; i < numSyncButtons; ++i)
     {
-        auto& b = syncButtons[(size_t) i];
-        b.setButtonText (syncNames[i]);
-        b.setClickingTogglesState (true);
-        addAndMakeVisible (b);
+        auto& button = syncButtons[(size_t) i];
 
-        b.onClick = [this, i]()
+        button.setButtonText (syncNames[i]);
+        button.setClickingTogglesState (true);
+        addAndMakeVisible (button);
+
+        button.onClick = [this, i]()
         {
             setSyncButton (i);
         };
@@ -213,86 +565,94 @@ TinTinProcessorEditor::TinTinProcessorEditor (TinTinProcessor& p)
 
     freeButton.setClickingTogglesState (true);
     addAndMakeVisible (freeButton);
+
     freeButton.onClick = [this]()
     {
         setFreeDelayMode();
     };
-
-    msSlider.setRange (10.0, 2000.0, 1.0);
-    msSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 50, 18);
-    addAndMakeVisible (msSlider);
-
-    msSlider.onValueChange = [this]()
-    {
-        auto& params = processor.getParams();
-        params.displacementMs->setValueNotifyingHost ((float) msSlider.getValue());
-    };
-
-    setSize (800, 320);
-    syncFromParams();
 }
 
-TinTinProcessorEditor::~TinTinProcessorEditor()
+void TinTinProcessorEditor::timerCallback()
 {
-    setLookAndFeel (nullptr);
+    syncPianoFromProcessor();
 }
 
-//====================== sync helpers ======================
+void TinTinProcessorEditor::syncPianoFromProcessor()
+{
+    const auto& h = processor.getPianoHighlightState();
+
+    std::vector<int> notes;
+    notes.reserve (32);
+
+    for (int n = 0; n < 128; ++n)
+    {
+        if (h.staticT[(size_t) n])
+            notes.push_back (n);
+    }
+
+    pianoView.setStaticTNotes (notes);
+    pianoView.setMVoiceState   (h.inputM);
+    pianoView.setTVoiceState   (h.outputT);
+}
+
 
 void TinTinProcessorEditor::syncFromParams()
 {
     auto& params = processor.getParams();
 
-    // root
     {
-        // map midi → index
-        int midi = params.rootNote->get();
-        int idx  = 0;
+        const int midi = params.rootNote->get();
+        rootIndexUI = 0;
+
         for (int i = 0; i < 12; ++i)
         {
             if (midiRootFromIndex (i) == midi)
             {
-                idx = i;
+                rootIndexUI = i;
                 break;
             }
         }
-        for (int i = 0; i < 12; ++i)
-            rootButtons[(size_t) i].setToggleState (i == idx, juce::dontSendNotification);
+
+        updateRootButtons();
     }
 
-    // triad
     {
-        auto idx = params.triadType->getIndex(); // 0=Major,1=Minor
-        majorButton.setToggleState (idx == 0, juce::dontSendNotification);
-        minorButton.setToggleState (idx == 1, juce::dontSendNotification);
+        auto triadIndex = params.triadType->getIndex(); // 0 = Major, 1 = Minor
+        majorButton.setToggleState (triadIndex == 0, juce::dontSendNotification);
+        minorButton.setToggleState (triadIndex == 1, juce::dontSendNotification);
     }
 
-    // position / mode
     updatePositionButtons();
-
-    // M-Voice
     updateMVoiceButton();
 
-    // delay
     msSlider.setValue (params.displacementMs->get(), juce::dontSendNotification);
     updateDelayButtons();
 }
 
 void TinTinProcessorEditor::selectRoot (int index)
 {
-    auto midi = midiRootFromIndex (index);
+    rootIndexUI = juce::jlimit (0, 11, index);
 
     auto& params = processor.getParams();
+    auto  midi   = midiRootFromIndex (rootIndexUI);
+
     params.rootNote->setValueNotifyingHost (midi);
 
     updateRootButtons();
 }
 
-void TinTinProcessorEditor::selectTriad (bool major)
+void TinTinProcessorEditor::updateRootButtons()
+{
+    for (int i = 0; i < 12; ++i)
+        rootButtons[(size_t) i].setToggleState (i == rootIndexUI,
+                                                juce::dontSendNotification);
+}
+
+void TinTinProcessorEditor::selectTriad (bool isMajor)
 {
     auto& params = processor.getParams();
 
-    if (major)
+    if (isMajor)
         params.triadType->setValueNotifyingHost (0);
     else
         params.triadType->setValueNotifyingHost (1);
@@ -304,10 +664,9 @@ void TinTinProcessorEditor::selectPosition (int index)
 {
     auto& params = processor.getParams();
 
-    auto modeIdx = modeIndexFromPositionButton (index);
-    params.modeSelect->setValueNotifyingHost (modeIdx);
+    auto modeIndex = modeIndexFromPositionButton (index);
+    params.modeSelect->setValueNotifyingHost (modeIndex);
 
-    // leaving Orbit toggle off
     orbitToggleButton.setToggleState (false, juce::dontSendNotification);
 
     updatePositionButtons();
@@ -317,27 +676,18 @@ void TinTinProcessorEditor::setMVoice (bool on)
 {
     auto& params = processor.getParams();
     params.mVoiceOn->setValueNotifyingHost (on);
+
     updateMVoiceButton();
 }
 
 void TinTinProcessorEditor::setSyncButton (int buttonIndex)
 {
-    auto& params = processor.getParams();
-
-    // map the 8 visible buttons to 16 sync indices
-    // 0: 1n  -> index 12 (1 bar)
-    // 1: 2n  -> index 13 (2 bars)
-    // 2: 4d  -> index 7  (1/4 dotted)
-    // 3: 4n  -> index 6  (1/4)
-    // 4: 8d  -> index 4  (1/8 dotted)
-    // 5: 8n  -> index 3  (1/8)
-    // 6: 16d -> index 1  (1/16 dotted)
-    // 7: 16n -> index 0  (1/16)
     static const int syncMap[numSyncButtons] = { 12, 13, 7, 6, 4, 3, 1, 0 };
 
     if (buttonIndex < 0 || buttonIndex >= numSyncButtons)
         return;
 
+    auto& params = processor.getParams();
     params.displacementMode->setValueNotifyingHost (1); // Sync
     params.displacementSync->setValueNotifyingHost (syncMap[buttonIndex]);
 
@@ -348,34 +698,17 @@ void TinTinProcessorEditor::setFreeDelayMode()
 {
     auto& params = processor.getParams();
     params.displacementMode->setValueNotifyingHost (2); // Absolute
+
     updateDelayButtons();
 }
 
-//====================== update button states ======================
-
-void TinTinProcessorEditor::updateRootButtons()
-{
-    auto midi = processor.getParams().rootNote->get();
-
-    int active = 0;
-    for (int i = 0; i < 12; ++i)
-    {
-        if (midiRootFromIndex (i) == midi)
-        {
-            active = i;
-            break;
-        }
-    }
-
-    for (int i = 0; i < 12; ++i)
-        rootButtons[(size_t) i].setToggleState (i == active, juce::dontSendNotification);
-}
 
 void TinTinProcessorEditor::updateTriadButtons()
 {
-    auto idx = processor.getParams().triadType->getIndex();
-    majorButton.setToggleState (idx == 0, juce::dontSendNotification);
-    minorButton.setToggleState (idx == 1, juce::dontSendNotification);
+    auto triadIndex = processor.getParams().triadType->getIndex();
+
+    majorButton.setToggleState (triadIndex == 0, juce::dontSendNotification);
+    minorButton.setToggleState (triadIndex == 1, juce::dontSendNotification);
 }
 
 void TinTinProcessorEditor::updatePositionButtons()
@@ -389,13 +722,12 @@ void TinTinProcessorEditor::updatePositionButtons()
     pos1InfButton.setToggleState (pos == 3, juce::dontSendNotification);
     pos2InfButton.setToggleState (pos == 4, juce::dontSendNotification);
 
-    // orbit toggle
     orbitToggleButton.setToggleState (idx == 5, juce::dontSendNotification);
 }
 
 void TinTinProcessorEditor::updateMVoiceButton()
 {
-    bool on = processor.getParams().mVoiceOn->get();
+    auto on = processor.getParams().mVoiceOn->get();
     mVoiceButton.setToggleState (on, juce::dontSendNotification);
 }
 
@@ -408,15 +740,13 @@ void TinTinProcessorEditor::updateDelayButtons()
 
     nowButton.setToggleState (mode == 0, juce::dontSendNotification);
 
-    // clear sync + free
-    for (auto& b : syncButtons)
-        b.setToggleState (false, juce::dontSendNotification);
+    for (auto& button : syncButtons)
+        button.setToggleState (false, juce::dontSendNotification);
 
     freeButton.setToggleState (mode == 2, juce::dontSendNotification);
 
     if (mode == 1)
     {
-        // reverse-map sync index to one of visible buttons
         static const int syncMap[numSyncButtons] = { 12, 13, 7, 6, 4, 3, 1, 0 };
 
         for (int i = 0; i < numSyncButtons; ++i)
@@ -429,8 +759,6 @@ void TinTinProcessorEditor::updateDelayButtons()
         }
     }
 }
-
-//====================== paint / resized ======================
 
 void TinTinProcessorEditor::paint (juce::Graphics& g)
 {
@@ -455,120 +783,154 @@ void TinTinProcessorEditor::resized()
     auto titleArea = r.removeFromTop (40);
     titleLabel.setBounds (titleArea.removeFromLeft (260));
 
-    // LEFT = control column, RIGHT = piano
-    auto left  = r.removeFromLeft (280);
+    auto left  = r.removeFromLeft (leftWidth);
     r.removeFromLeft (pad);
     auto right = r;
 
-    // LEFT: root grid at top
-    auto rootArea = left.removeFromTop (buttonH * 4 + pad * 3);
-
-    auto row = rootArea;
-    row.removeFromBottom (rootArea.getHeight() - buttonH); // first row
-
-    auto cellW = row.getWidth() / 3;
-
-    int idx = 0;
-    auto areaCopy = rootArea;
-
-    for (int rowIdx = 0; rowIdx < 4; ++rowIdx)
+    // root grid 4x3
     {
-        auto rowR = areaCopy.removeFromTop (buttonH);
-        if (rowIdx < 3)
-            areaCopy.removeFromTop (pad);
+        auto rootArea = left.removeFromTop (buttonH * 4 + pad * 3);
+        auto areaCopy = rootArea;
 
-        for (int colIdx = 0; colIdx < 3; ++colIdx)
+        auto cellW = rootArea.getWidth() / 3;
+        int  idx   = 0;
+
+        for (int row = 0; row < 4; ++row)
         {
-            auto cell = rowR.removeFromLeft (cellW);
-            rootButtons[(size_t) idx++].setBounds (cell.reduced (1));
+            auto rowArea = areaCopy.removeFromTop (buttonH);
+
+            if (row < 3)
+                areaCopy.removeFromTop (pad);
+
+            for (int col = 0; col < 3; ++col)
+            {
+                auto cell = rowArea.removeFromLeft (cellW);
+                rootButtons[(size_t) idx++].setBounds (cell.reduced (1));
+            }
         }
     }
 
     left.removeFromTop (pad);
 
-    // TRIAD row
-    auto triadRow = left.removeFromTop (buttonH);
-    majorButton.setBounds (triadRow.removeFromLeft (triadRow.getWidth() / 2).reduced (1));
-    minorButton.setBounds (triadRow.reduced (1));
+    {
+        auto triadRow = left.removeFromTop (buttonH);
+        auto leftHalf = triadRow.removeFromLeft (triadRow.getWidth() / 2);
+
+        majorButton.setBounds (leftHalf.reduced (1));
+        minorButton.setBounds (triadRow.reduced (1));
+    }
 
     left.removeFromTop (pad);
 
-    // M-Voice
-    auto mRow = left.removeFromTop (buttonH);
-    mVoiceButton.setBounds (mRow.reduced (1));
+    // M-voice button
+    {
+        auto mRow = left.removeFromTop (buttonH);
+        mVoiceButton.setBounds (mRow.reduced (1));
+    }
 
     left.removeFromTop (pad);
 
-    // POSITION buttons in a column
-    auto posArea = left.removeFromTop (buttonH * 5 + pad * 4);
+    // position buttons column
+    {
+        auto posArea = left.removeFromTop (buttonH * 5 + pad * 4);
 
-    auto posRow = posArea;
-    posRow.removeFromBottom (posArea.getHeight() - buttonH);
+        auto row = posArea.removeFromTop (buttonH);
+        posNoneButton.setBounds (row.reduced (1));
+        posArea.removeFromTop (pad);
 
-    posNoneButton.setBounds (posRow.reduced (1));
-    posArea.removeFromTop (buttonH + pad);
+        row = posArea.removeFromTop (buttonH);
+        pos2SupButton.setBounds (row.reduced (1));
+        posArea.removeFromTop (pad);
 
-    posRow = posArea.removeFromTop (buttonH);
-    pos2SupButton.setBounds (posRow.reduced (1));
+        row = posArea.removeFromTop (buttonH);
+        pos1SupButton.setBounds (row.reduced (1));
+        posArea.removeFromTop (pad);
 
-    posArea.removeFromTop (pad);
-    posRow = posArea.removeFromTop (buttonH);
-    pos1SupButton.setBounds (posRow.reduced (1));
+        row = posArea.removeFromTop (buttonH);
+        pos1InfButton.setBounds (row.reduced (1));
+        posArea.removeFromTop (pad);
 
-    posArea.removeFromTop (pad);
-    posRow = posArea.removeFromTop (buttonH);
-    pos1InfButton.setBounds (posRow.reduced (1));
+        row = posArea.removeFromTop (buttonH);
+        pos2InfButton.setBounds (row.reduced (1));
+    }
 
-    posArea.removeFromTop (pad);
-    posRow = posArea.removeFromTop (buttonH);
-    pos2InfButton.setBounds (posRow.reduced (1));
+    // rigthside
 
-    // RIGHT: piano + toggles + delay row
-    auto pianoArea = right.removeFromTop (right.getHeight() - 60);
-    pianoView.setBounds (pianoArea.reduced (pad));
+    {
+        auto pianoArea = right.removeFromTop (pianoHeight);
+        pianoView.setBounds (pianoArea.reduced (pad));
+    }
+
+    right.removeFromTop (pad);
 
     // toggles under piano
-    auto toggleRow = right.removeFromTop (smallH);
-    auto boxSize   = smallH;
+    {
+        auto toggleRow = right.removeFromTop (smallH);
+        auto boxSize   = smallH;
 
-    auto tBox = toggleRow.removeFromLeft (boxSize);
-    tHighlightButton.setBounds (tBox.reduced (2));
+        auto tBox = toggleRow.removeFromLeft (boxSize);
+        tHighlightButton.setBounds (tBox.reduced (2));
 
-    toggleRow.removeFromLeft (pad);
+        toggleRow.removeFromLeft (pad);
 
-    auto orbitBox = toggleRow.removeFromLeft (boxSize * 2);
-    orbitToggleButton.setBounds (orbitBox.reduced (2));
+        auto orbitBox = toggleRow.removeFromLeft (boxSize * 2);
+        orbitToggleButton.setBounds (orbitBox.reduced (2));
 
-    toggleRow.removeFromLeft (pad);
+        toggleRow.removeFromLeft (pad);
 
-    auto mBox = toggleRow.removeFromLeft (boxSize);
-    mHighlightButton.setBounds (mBox.reduced (2));
+        auto mBox = toggleRow.removeFromLeft (boxSize);
+        mHighlightButton.setBounds (mBox.reduced (2));
 
-    toggleRow.removeFromLeft (pad);
+        toggleRow.removeFromLeft (pad);
 
-    auto randBox = toggleRow.removeFromLeft (boxSize * 2);
-    randomButton.setBounds (randBox.reduced (2));
+        auto randBox = toggleRow.removeFromLeft (boxSize * 2);
+        randomButton.setBounds (randBox.reduced (2));
+    }
 
     right.removeFromTop (pad);
 
     // delay row
-    auto delayRow = right.removeFromTop (buttonH);
-
-    nowButton.setBounds (delayRow.removeFromLeft (60).reduced (1));
-    delayRow.removeFromLeft (pad);
-
-    auto syncTotalWidth = delayRow.getWidth() - 140; // leave room for Free + ms
-    auto syncCellWidth  = syncTotalWidth / (int) syncButtons.size();
-
-    for (int i = 0; i < numSyncButtons; ++i)
     {
-        auto cell = delayRow.removeFromLeft (syncCellWidth);
-        syncButtons[(size_t) i].setBounds (cell.reduced (1));
+        auto delayRow = right.removeFromTop (buttonH);
+
+        nowButton.setBounds (delayRow.removeFromLeft (60).reduced (1));
+        delayRow.removeFromLeft (pad);
+
+        auto syncTotalWidth = delayRow.getWidth() - 140;
+        auto syncCellWidth  = syncTotalWidth / (int) syncButtons.size();
+
+        for (int i = 0; i < numSyncButtons; ++i)
+        {
+            auto cell = delayRow.removeFromLeft (syncCellWidth);
+            syncButtons[(size_t) i].setBounds (cell.reduced (1));
+        }
+
+        auto freeWidth = 60;
+        freeButton.setBounds (delayRow.removeFromLeft (freeWidth).reduced (1));
+        delayRow.removeFromLeft (pad);
+
+        msSlider.setBounds (delayRow.reduced (1));
     }
 
-    auto freeWidth = 60;
-    freeButton.setBounds (delayRow.removeFromLeft (freeWidth).reduced (1));
-    delayRow.removeFromLeft (pad);
+    // putting controls above the piano?!
+    for (auto& b : rootButtons) b.toFront (false);
+    majorButton.toFront (false);
+    minorButton.toFront (false);
+    mVoiceButton.toFront (false);
 
-    msSlider.setBounds (delayRow.reduced (1));
+    posNoneButton.toFront (false);
+    pos2SupButton.toFront (false);
+    pos1SupButton.toFront (false);
+    pos1InfButton.toFront (false);
+    pos2InfButton.toFront (false);
+
+    tHighlightButton.toFront (false);
+    orbitToggleButton.toFront (false);
+    mHighlightButton.toFront (false);
+    randomButton.toFront (false);
+
+    nowButton.toFront (false);
+    for (auto& b : syncButtons) b.toFront (false);
+    freeButton.toFront (false);
+    msSlider.toFront (false);
 }

@@ -10,8 +10,15 @@
 #include "BinaryData.h"
 #include "TintinMapper.h"
 
+struct PianoHighlightState
+{
+    std::array<bool, 128> staticT {};   // allowed T notes (yellow)
+    std::array<bool, 128> inputM {};    // incoming M notes (blue)
+    std::array<bool, 128> outputT {};   // Tintin T output (red)
+};
 
 class TinTinProcessor : public PluginHelpers::ProcessorBase
+
 {
 public:
     TinTinProcessor();
@@ -21,6 +28,9 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
 
+    const PianoHighlightState& getPianoHighlightState() const noexcept { return pianoHighlightState; }
+    juce::MidiKeyboardState&   getPreviewKeyboardState() noexcept      { return previewKeyboardState; }
+
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
 
@@ -29,14 +39,21 @@ public:
 
 private:
     void updateOptions();
+    void updateStaticTGrid();
+    void updateHighlightState (const juce::MidiBuffer& mInput,
+                               const juce::MidiBuffer& tOutput);
+
     void loadSample(const void* data, int dataSize, int rootMidiNote);
     void loadPianoSound();
 
     Parameters params;
-
-    // Tintinnabuli::Mapper tintin;
     TintinMapper tintin;
 
     juce::Synthesiser      piano;
     juce::AudioFormatManager formatManager;
+
+    PianoHighlightState pianoHighlightState;
+    juce::MidiKeyboardState previewKeyboardState;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TinTinProcessor)
 };

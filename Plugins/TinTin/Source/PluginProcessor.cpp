@@ -6,13 +6,15 @@ TinTinProcessor::TinTinProcessor()
 {
     params.add (*this);
 
-    // Synth setup
+    // synth
     piano.clearVoices();
     for (int i = 0; i < 8; ++i)
         piano.addVoice (new juce::SamplerVoice());
 
     formatManager.registerBasicFormats();
     loadPianoSound();
+
+    updateOptions();
 }
 
 void TinTinProcessor::loadSample(const void* data,
@@ -111,36 +113,104 @@ void TinTinProcessor::updateOptions()
     c.displacementMs = params.displacementMs->get();
 
     c.scaleIndex      = params.scaleSelect->getIndex();
-    c.feedbackRepeats = 0;   // for future UI
-    c.numTVoices      = 1;   // for future UI
+    c.feedbackRepeats = 0;  //for v2
+    c.numTVoices      = 1;   //for v2
     c.mVoiceOn        = params.mVoiceOn->get();
+
+    updateStaticTGrid();
 }
 
-void TinTinProcessor::processBlock(juce::AudioBuffer<float>& buffer,
-                                   juce::MidiBuffer& midiMessages)
+void TinTinProcessor::updateStaticTGrid()
+{
+    pianoHighlightState.staticT.fill (false);
+
+    const int rootMidi = tintin.settings.rootNote;
+    if (rootMidi < 0)
+        return;
+
+    const bool isMajor = (tintin.settings.triad == TintinSettings::TriadType::Major);
+
+    const int rootPc   = rootMidi % 12;
+    const int thirdInt = isMajor ? 4 : 3;   // simple triad: R,3,5
+    const int fifthInt = 7;
+
+    const int thirdPc = (rootPc + thirdInt) % 12;
+    const int fifthPc = (rootPc + fifthInt) % 12;
+
+    for (int note = 0; note < 128; ++note)
+    {
+        const int pc = note % 12;
+
+        if (pc == rootPc || pc == thirdPc || pc == fifthPc)
+            pianoHighlightState.staticT[(size_t) note] = true;
+    }
+}
+
+
+void TinTinProcessor::updateHighlightState (const juce::MidiBuffer& mInput,
+                                            const juce::MidiBuffer& tOutput)
+{
+    pianoHighlightState.inputM.fill  (false);
+    pianoHighlightState.outputT.fill (false);
+
+    auto applyBufferToFlags = [] (const juce::MidiBuffer& src,
+                                  std::array<bool, 128>& flags)
+    {
+        for (auto meta : src)
+        {
+            const auto& msg  = meta.getMessage();
+            const int   note = msg.getNoteNumber();
+
+            if (note < 0 || note >= 128)
+                continue;
+
+            if (msg.isNoteOn())
+                flags[(size_t) note] = true;
+            else if (msg.isNoteOff())
+                flags[(size_t) note] = false;
+        }
+    };
+
+    applyBufferToFlags (mInput,  pianoHighlightState.inputM);
+    applyBufferToFlags (tOutput, pianoHighlightState.outputT);
+}
+
+void TinTinProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+                                    juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
     updateOptions();
 
+    //merging on screen piano ui midi into host midi
+    //lock free?? safe??
+    previewKeyboardState.processNextMidiBuffer (midiMessages,
+                                                0,
+                                                buffer.getNumSamples(),
+                                                true);
+
+    //keep a copy of the m voice input (before tintin transforms it)
+    juce::MidiBuffer mInput (midiMessages);
+
     // tempo for sync displacement
     double bpm = 120.0;
     if (auto* playHead = getPlayHead())
     {
         juce::AudioPlayHead::CurrentPositionInfo pos;
-        if (playHead->getCurrentPosition(pos) && pos.bpm > 0.0)
+        if (playHead->getCurrentPosition (pos) && pos.bpm > 0.0)
             bpm = pos.bpm;
     }
     tintin.settings.bpm = bpm;
 
-    // process MIDI through tintin engine
-    tintin.process(midiMessages, getSampleRate(), buffer.getNumSamples());
+    // process midi in place
+    tintin.process (midiMessages, getSampleRate(), buffer.getNumSamples());
 
-    // render from transformed MIDI
-    piano.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+    updateHighlightState (mInput, midiMessages);
+
+    // render from transformed midi
+    piano.renderNextBlock (buffer, midiMessages, 0, buffer.getNumSamples());
 }
-
 
 
 juce::AudioProcessorEditor* TinTinProcessor::createEditor()
